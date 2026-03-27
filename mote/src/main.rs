@@ -7,7 +7,7 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
-use defmt::info;
+use defmt::{error, info};
 use esp_hal::clock::CpuClock;
 use esp_hal::main;
 use esp_hal::time::{Duration, Instant};
@@ -15,6 +15,7 @@ use esp_hal::timer::timg::TimerGroup;
 use {esp_backtrace as _, esp_println as _};
 
 extern crate alloc;
+mod wifi;
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
@@ -35,10 +36,14 @@ fn main() -> ! {
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
-    let radio_init = esp_radio::init().expect("Failed to initialize Wi-Fi/BLE controller");
-    let (mut _wifi_controller, _interfaces) =
-        esp_radio::wifi::new(&radio_init, peripherals.WIFI, Default::default())
-            .expect("Failed to initialize Wi-Fi controller");
+
+    let wifi_f = match wifi::init(peripherals.WIFI) {
+        Ok(v) => v,
+        Err(e) => {
+            error!("WiFi initialization error: {}", e);
+            panic!()
+        }
+    };
 
     loop {
         info!("Hello world!");
