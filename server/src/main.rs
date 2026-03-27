@@ -1,13 +1,17 @@
-use axum::{Router, routing::get};
+use axum::{Router, routing::get, routing::post};
+
+mod api;
+mod web;
 
 #[tokio::main]
 async fn main() {
-    println!("Hello, world!");
     let listener = tokio::net::TcpListener::bind("0.0.0.0:9876").await.unwrap();
 
     let router = Router::new()
-        .route("/", get("Hello!"))
-        .route("/goodbye", get("Goodbye!"));
+        // web routes
+        .route("/", get(web::index::get))
+        // api routes
+        .route("/api/data", post(api::data::post));
 
     axum::serve(listener, router).await.unwrap();
 }
