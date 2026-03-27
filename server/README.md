@@ -1,4 +1,4 @@
 # Server
 
-This package serves a website and an API backend.
-It uses `axum` for the HTTP routing, and `maud` for the HTML rendering.
+This package serves a website and API endpoints.
+It uses [`axum`](https://docs.rs/axum/latest/axum/) for the HTTP routing, and [`maud`](https://maud.lambda.xyz/) for the HTML rendering.
