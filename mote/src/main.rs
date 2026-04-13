@@ -7,7 +7,7 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
-use crate::wifi::{build_networking_stack, connect_wifi, setup_tcp, setup_wifi};
+use crate::wifi::{assign_ip_address, build_networking_stack, connect_wifi, setup_tcp, setup_wifi};
 use alloc::vec::Vec;
 use defmt::{error, info};
 use embedded_io::{Read, Write};
@@ -15,7 +15,7 @@ use esp_hal::clock::CpuClock;
 use esp_hal::main;
 use esp_hal::time::{Duration, Instant};
 use esp_hal::timer::timg::TimerGroup;
-use esp_println::print;
+use esp_println::{print, println};
 use smoltcp::wire::IpAddress;
 
 use {esp_backtrace as _, esp_println as _};
@@ -51,12 +51,14 @@ fn main() -> ! {
 
     let (tcp_interface, mut tcp_sockets) = setup_tcp(&mut wifi_device);
 
-    let net_stack = build_networking_stack(wifi_device, tcp_interface, &mut tcp_sockets);
+    let mut net_stack = build_networking_stack(wifi_device, tcp_interface, &mut tcp_sockets);
 
-    if let Some(e) = connect_wifi(&mut wifi_controller) {
+    connect_wifi(&mut wifi_controller).unwrap_or_else(|e| {
         error!("WiFi connection error: {}", e);
         panic!();
-    }
+    });
+
+    assign_ip_address(&mut net_stack);
 
     // === get IP address for server === //
     let server_ip_parts: Vec<u8> = env!("SERVER_IP")
@@ -80,7 +82,11 @@ fn main() -> ! {
     let mut tcp_read_buffer = [0u8; 2048];
     let mut tcp_socket = net_stack.get_socket(&mut tcp_read_buffer, &mut tcp_write_buffer);
     tcp_socket.work();
-    tcp_socket.open(server_ip, server_port).unwrap();
+    println!("{server_ip}:{server_port}");
+    tcp_socket.open(server_ip, server_port).unwrap_or_else(|e| {
+        error!("TCP socket error: {}", e);
+        panic!();
+    });
     loop {
         tcp_socket.write(b"GET / HTTP/1.0").unwrap(); // TODO
         tcp_socket.flush().unwrap();
