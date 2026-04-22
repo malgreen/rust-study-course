@@ -8,6 +8,7 @@
 #![deny(clippy::large_stack_frames)]
 
 use crate::wifi::{assign_ip_address, build_networking_stack, connect_wifi, setup_tcp, setup_wifi};
+use alloc::format;
 use alloc::vec::Vec;
 use defmt::{error, info};
 use embedded_io::{Read, Write};
@@ -15,7 +16,7 @@ use esp_hal::clock::CpuClock;
 use esp_hal::main;
 use esp_hal::time::{Duration, Instant};
 use esp_hal::timer::timg::TimerGroup;
-use esp_println::{print, println};
+use esp_println::print;
 use smoltcp::wire::IpAddress;
 
 use {esp_backtrace as _, esp_println as _};
@@ -44,10 +45,16 @@ fn main() -> ! {
     esp_rtos::start(timg0.timer0);
 
     // === networking setup === //
-    let radio_controller: esp_radio::Controller<'static> = esp_radio::init().unwrap();
+    let radio_controller: esp_radio::Controller<'static> = esp_radio::init().unwrap_or_else(|e| {
+        error!("ESP Radio initialization error: {}", e);
+        panic!();
+    });
 
-    let (mut wifi_controller, mut wifi_device) =
-        setup_wifi(&radio_controller, peripherals.WIFI).unwrap();
+    let (mut wifi_controller, mut wifi_device) = setup_wifi(&radio_controller, peripherals.WIFI)
+        .unwrap_or_else(|e| {
+            error!("WiFi initialization error: {}", e);
+            panic!();
+        });
 
     let (tcp_interface, mut tcp_sockets) = setup_tcp(&mut wifi_device);
 
@@ -60,13 +67,73 @@ fn main() -> ! {
 
     assign_ip_address(&mut net_stack);
 
-    // === get IP address for server === //
+    // === send http request === //
+    let mut tcp_write_buffer = [0u8; 2048];
+    let mut tcp_read_buffer = [0u8; 2048];
+    let mut tcp_socket = net_stack.get_socket(&mut tcp_read_buffer, &mut tcp_write_buffer);
+    tcp_socket.work();
+
+    let (server_ip, server_port) = get_server_ip_address_and_port();
+    tcp_socket.open(server_ip, server_port).unwrap_or_else(|e| {
+        error!("TCP open socket error: {}", e);
+        panic!();
+    });
+    loop {
+        // === 1. send http request === //
+        info!("Sending GET request to {}:{}", server_ip, server_port);
+        tcp_socket.work();
+        if let Err(e) = // we can't use unwrap_or_else because we need control flow control
+            tcp_socket.write(format!("GET / HTTP/1.1\r\nHost:{server_ip}\r\n").as_bytes())
+        {
+            error!("GET request error: {} - retrying", e);
+            continue;
+        }
+
+        if let Err(e) = tcp_socket.flush() {
+            error!("TCP flush socket error: {} - retrying", e);
+            continue;
+        }
+
+        // === 2. listen for http response === //
+        info!("Request sent, waiting for response...");
+        let timeout = Instant::now() + Duration::from_secs(20);
+        let mut tcp_socket_buffer = [0u8; 512];
+        // if tcp_socket.is_open() TODO <--
+        while let Ok(len) = tcp_socket.read(&mut tcp_socket_buffer) {
+            info!("reading");
+            let Ok(part) = core::str::from_utf8(&tcp_socket_buffer[..len]) else {
+                error!("TCP read socket error - retrying");
+                continue;
+            };
+            print!("{part}");
+
+            if Instant::now() > timeout {
+                info!("GET timeout - retrying");
+                continue;
+            }
+        }
+
+        // === 3. close socket === //
+        tcp_socket.disconnect();
+        let mut timeout = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < timeout {
+            tcp_socket.work();
+        }
+
+        timeout = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < timeout {}
+    }
+}
+
+// we don't really want to use Result here because the error is fatal
+fn get_server_ip_address_and_port() -> (IpAddress, u16) {
     let server_ip_parts: Vec<u8> = env!("SERVER_IP")
         .split(".")
         .map(|p| p.parse::<u8>().unwrap())
         .collect();
-    assert!(
-        server_ip_parts.len() == 4,
+    assert_eq!(
+        server_ip_parts.len(),
+        4,
         "Server IP must be a valid IPv4 address"
     );
     let server_ip: IpAddress = IpAddress::v4(
@@ -76,34 +143,5 @@ fn main() -> ! {
         server_ip_parts[3],
     );
     let server_port: u16 = env!("SERVER_PORT").parse().unwrap();
-
-    // === send http request === //
-    let mut tcp_write_buffer = [0u8; 2048];
-    let mut tcp_read_buffer = [0u8; 2048];
-    let mut tcp_socket = net_stack.get_socket(&mut tcp_read_buffer, &mut tcp_write_buffer);
-    tcp_socket.work();
-    println!("{server_ip}:{server_port}");
-    tcp_socket.open(server_ip, server_port).unwrap_or_else(|e| {
-        error!("TCP socket error: {}", e);
-        panic!();
-    });
-    loop {
-        tcp_socket.write(b"GET / HTTP/1.0").unwrap(); // TODO
-        tcp_socket.flush().unwrap();
-
-        // === listen for http response === //
-        let mut tcp_socket_buffer = [0u8; 512];
-        while let Ok(len) = tcp_socket.read(&mut tcp_socket_buffer) {
-            let part = unsafe { core::str::from_utf8_unchecked(&tcp_socket_buffer[..len]) };
-            print!("{part}");
-            tcp_socket.work();
-        }
-
-        info!("Hello world!");
-        let delay_start = Instant::now();
-        while delay_start.elapsed() < Duration::from_millis(500) {}
-    }
-    // tcp_socket.disconnect();
-
-    // for inspiration have a look at the examples at https://github.com/esp-rs/esp-hal/tree/esp-hal-v1.0.0/examples
+    (server_ip, server_port)
 }

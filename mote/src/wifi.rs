@@ -81,7 +81,6 @@ pub fn build_networking_stack<'a>(
 }
 
 /// Connects to WiFi using SSID and Password set as environment variables
-// TODO: use Result?
 pub fn connect_wifi(wifi_controller: &mut WifiController) -> Result<(), WifiError> {
     wifi_controller.set_power_saving(esp_radio::wifi::PowerSaveMode::None)?;
 
@@ -109,14 +108,9 @@ pub fn connect_wifi(wifi_controller: &mut WifiController) -> Result<(), WifiErro
 pub fn assign_ip_address(stack: &mut Stack<WifiDevice>) {
     info!("Assigning IP address...");
 
-    // while !stack.is_iface_up() {
-    //     stack.work();
-    // }
-    loop {
+    while !stack.is_iface_up() {
         stack.work();
-        if stack.is_iface_up() {
-            break;
-        }
     }
+
     info!("IP address assigned");
 }
