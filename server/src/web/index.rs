@@ -1,3 +1,4 @@
 pub async fn get() -> &'static str {
-    "Hello!"
+    println!("get /");
+    "Hello!\n"
 }
