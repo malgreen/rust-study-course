@@ -22,6 +22,3 @@ target
 
 # Ignore .DS_Store file on macOS
 **/.DS_Store
-
-# ignore config.toml (because env secrets)
-mote/.cargo/config.toml
