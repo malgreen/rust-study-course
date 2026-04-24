@@ -7,21 +7,17 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
+use crate::http::http_loop;
 use crate::wifi::{assign_ip_address, build_networking_stack, connect_wifi, setup_tcp, setup_wifi};
-use alloc::format;
-use alloc::vec::Vec;
-use defmt::{error, info};
-use embedded_io::{Read, Write};
+use defmt::error;
 use esp_hal::clock::CpuClock;
 use esp_hal::main;
-use esp_hal::time::{Duration, Instant};
 use esp_hal::timer::timg::TimerGroup;
-use esp_println::print;
-use smoltcp::wire::IpAddress;
 
 use {esp_backtrace as _, esp_println as _};
 
 extern crate alloc;
+mod http;
 mod wifi;
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
@@ -35,7 +31,6 @@ esp_bootloader_esp_idf::esp_app_desc!();
 #[main]
 fn main() -> ! {
     // === device setup === //
-    // TODO: configure clock
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
 
@@ -67,81 +62,13 @@ fn main() -> ! {
 
     assign_ip_address(&mut net_stack);
 
-    // === send http request === //
     let mut tcp_write_buffer = [0u8; 2048];
     let mut tcp_read_buffer = [0u8; 2048];
     let mut tcp_socket = net_stack.get_socket(&mut tcp_read_buffer, &mut tcp_write_buffer);
-    tcp_socket.work();
 
-    let (server_ip, server_port) = get_server_ip_address_and_port();
-    tcp_socket.open(server_ip, server_port).unwrap_or_else(|e| {
-        error!("TCP open socket error: {}", e);
-        panic!();
-    });
-    loop {
-        // === 1. send http request === //
-        info!("Sending GET request to {}:{}", server_ip, server_port);
-        tcp_socket.work();
-        if let Err(e) = // we can't use unwrap_or_else because we need control flow control
-            tcp_socket.write(format!("GET / HTTP/1.1\r\nHost:{server_ip}\r\n").as_bytes())
-        {
-            error!("GET request error: {} - retrying", e);
-            continue;
-        }
+    // === main loops === //
+    http_loop(&mut tcp_socket);
 
-        if let Err(e) = tcp_socket.flush() {
-            error!("TCP flush socket error: {} - retrying", e);
-            continue;
-        }
-
-        // === 2. listen for http response === //
-        info!("Request sent, waiting for response...");
-        let timeout = Instant::now() + Duration::from_secs(20);
-        let mut tcp_socket_buffer = [0u8; 512];
-        // if tcp_socket.is_open() TODO <--
-        while let Ok(len) = tcp_socket.read(&mut tcp_socket_buffer) {
-            info!("reading");
-            let Ok(part) = core::str::from_utf8(&tcp_socket_buffer[..len]) else {
-                error!("TCP read socket error - retrying");
-                continue;
-            };
-            print!("{part}");
-
-            if Instant::now() > timeout {
-                info!("GET timeout - retrying");
-                continue;
-            }
-        }
-
-        // === 3. close socket === //
-        tcp_socket.disconnect();
-        let mut timeout = Instant::now() + Duration::from_secs(5);
-        while Instant::now() < timeout {
-            tcp_socket.work();
-        }
-
-        timeout = Instant::now() + Duration::from_secs(10);
-        while Instant::now() < timeout {}
-    }
-}
-
-// we don't really want to use Result here because the error is fatal
-fn get_server_ip_address_and_port() -> (IpAddress, u16) {
-    let server_ip_parts: Vec<u8> = env!("SERVER_IP")
-        .split(".")
-        .map(|p| p.parse::<u8>().unwrap())
-        .collect();
-    assert_eq!(
-        server_ip_parts.len(),
-        4,
-        "Server IP must be a valid IPv4 address"
-    );
-    let server_ip: IpAddress = IpAddress::v4(
-        server_ip_parts[0],
-        server_ip_parts[1],
-        server_ip_parts[2],
-        server_ip_parts[3],
-    );
-    let server_port: u16 = env!("SERVER_PORT").parse().unwrap();
-    (server_ip, server_port)
+    // TODO: why is this necessary?
+    loop {}
 }
