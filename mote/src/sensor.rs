@@ -1,12 +1,14 @@
-use esp_hal::clock::CpuClock;
+use core::fmt::Error;
+
+use alloc::str::pattern::SearchStep;
+// use esp_hal::clock::CpuClock;
 // use esp_hal::gpio::{Event, Input, InputConfig, Io, Level, Output, OutputConfig, Pull};
-use esp_hal::i2c::master::{Config as i2cConfig, I2c, Operation};
 use esp_hal::Blocking;
+use esp_hal::i2c::master::{Config as i2cConfig, I2c, Operation};
 // use esp_hal::peripherals::{GPIO, Peripherals};
 
-use defmt::info;
-// use esp_hal::peripherals::{self, I2C0};
-
+use defmt::{debug, error, info, warn};
+use esp_hal::peripherals::{GPIO21, GPIO22, I2C0};
 
 // Bootloader
 const _APP_VERIFY: [u8; 1] = [0xF3];
@@ -30,69 +32,87 @@ pub enum Status {
     Error = 0b00000001, // If error read E0 to get code
 }
 #[repr(u8)]
-pub enum MeasurementDriveMode  {
-    Mode0Idle = 0b00000000, // Idle
-    Mode11S = 0b00010000, // Measurement every 1 second
-    Mode210S = 0b00100000, // Measurement every 10 second
-    Mode360S = 0b00110000, // Measurement every 60 second
+pub enum MeasurementDriveMode {
+    Mode0Idle = 0b00000000,  // Idle
+    Mode11S = 0b00010000,    // Measurement every 1 second
+    Mode210S = 0b00100000,   // Measurement every 10 second
+    Mode360S = 0b00110000,   // Measurement every 60 second
     Mode4250MS = 0b01000000, // // Measurement every 250 ms (Only raw data)
 
     IRQEnable = 0b00001000, // Enable/disable interrupt
 }
 
+enum Errors {
+    NoDeviveFound,
+    ReadingFault,
+    DataNotReady
+}
+
 pub struct CO2Sensor<'a> {
     i2c: I2c<'a, Blocking>,
     dev_addr: u8,
-    interrupt_active: bool
+    interrupt_active: bool,
 }
 
 impl<'a> CO2Sensor<'a> {
-    pub fn new()-> Self  {
-        let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
-        let peripherals = esp_hal::init(config);
-        let i2c = I2c::new(peripherals.I2C0, i2cConfig::default())
+    pub fn new(_i2c: I2C0<'a>, scl: GPIO22<'a>, sda: GPIO21<'a>) -> Self {
+        let i2c = I2c::new(_i2c, i2cConfig::default())
             .unwrap()
-            .with_scl(peripherals.GPIO22) // Does it need .upwrap()?
-            .with_sda(peripherals.GPIO21);
-            // .with_scl(gpio22) // Does it need .upwrap()?
-            // .with_sda(gpio21);
+            .with_scl(scl) // Does it need .upwrap()?
+            .with_sda(sda);
 
-        Self { i2c, dev_addr: 0, interrupt_active: false }
+        Self {
+            i2c,
+            dev_addr: 0,
+            interrupt_active: false,
+        }
     }
 
-    pub fn find_dev(&mut self) // Return some correct type??
+    pub fn find_dev(&mut self) -> Result<bool, Errors> // Return some correct type??
     {
         let addr_space = 128_u8;
         let mut current_addr = 0;
-        let mut respons: [u8;1] = [0u8;1];
+        let mut respons: [u8; 1] = [0u8; 1];
         // let mut success = false;
 
         while current_addr < addr_space {
-            if self.i2c.read(current_addr, &mut respons).is_ok() {
-                info!("Device located at 0x{:02x}", current_addr);
-                // success = true;
-                self.dev_addr = current_addr;
+            match self.i2c.read(current_addr, &mut respons) 
+            {
+                Ok(()) => {
+                    info!("Device located at 0x{:02x}", current_addr);
+                    self.dev_addr = current_addr;
 
-                break; // Early stopping
+                    return Ok((true)); // Early stopping
+                },  
+                Err(_) => {}
             }
             current_addr += 1;
         }
+        error!("No device located");
+        return Err(Errors::NoDeviveFound);
+        // while current_addr < addr_space {
+        //     if self.i2c.read(current_addr, &mut respons).is_ok() {
+        //         info!("Device located at 0x{:02x}", current_addr);
+        //         success = true;
+        //         self.dev_addr = current_addr;
+
+        //         return Ok((true)); // Early stopping
+        //     }
+        //     current_addr += 1;
+        // }
 
         // Failed to locate device -> Report this somehow??
     }
 
     // Should return sometihng about the status??
-    pub fn read_status(&mut self) {
-        let mut status: [u8; 1] = [0u8;1];
+    pub fn read_status(&mut self)  {
+        let mut status: [u8; 1] = [0u8; 1];
 
-        let mut ret = self
-            .i2c
+        self.i2c
             .write_read(self.dev_addr, &_STATUS_REG, &mut status);
 
-        if status[0] & Status::FwMode as u8!= 0 {
-            info!(
-                "\t-> Firmware is in application mode. CCS811 is ready to take ADC measurements"
-            );
+        if status[0] & Status::FwMode as u8 != 0 {
+            info!("\t-> Firmware is in application mode. CCS811 is ready to take ADC measurements");
         } else {
             info!("\t-> Firmware is in boot mode, this allows new firmware to be loaded");
             if status[0] & Status::AppValid as u8 != 0 {
@@ -100,65 +120,86 @@ impl<'a> CO2Sensor<'a> {
 
                 // Run app start.
                 self.app_start();
-
             } else {
-                info!("\t-> No application firmware loaded");
+                error!("\t-> No application firmware loaded");
                 panic!("Shit fuck");
             }
         }
         if status[0] & Status::Error as u8 != 0 {
-        ret = self.i2c.write_read(self.dev_addr, &_ERRPR_ID_REG, &mut status);
-        print_error(status[0]);
-    }
+            self.i2c
+                .write_read(self.dev_addr, &_ERRPR_ID_REG, &mut status);
+            print_error(status[0]);
+        }
     }
 
     pub fn app_start(&mut self) {
-                let mut ret = self.i2c.write(self.dev_addr, &_APP_START);
+        self.i2c.write(self.dev_addr, &_APP_START);
 
-                // Confirm??
-                // delay.delay_millis(50);
+        // Confirm??
+        // delay.delay_millis(50);
 
-                self.read_status();
+        self.read_status();
     }
 
     pub fn config_i2c(&mut self, mode: MeasurementDriveMode, interrupt: bool) {
-        let mut config_read: [u8;1] = [0u8;1];
-        let mut ret = self.i2c.write_read(self.dev_addr, &_MEAS_MODE_REG, &mut config_read);
+        let mut config_read: [u8; 1] = [0u8; 1];
+        self.i2c
+            .write_read(self.dev_addr, &_MEAS_MODE_REG, &mut config_read);
 
         let mut configuration: u8 = mode as u8;
 
         // Check for active pin configuration??
 
         if interrupt {
-            configuration | MeasurementDriveMode::IRQEnable as u8;
+            configuration |= MeasurementDriveMode::IRQEnable as u8;
         }
+        debug!("Config: {:08b}", configuration);
 
         if config_read[0] & configuration != 0 {
-            ret = self.i2c.transaction(self.dev_addr, &mut [Operation::Write(&_MEAS_MODE_REG), Operation::Write(&[configuration as u8])])
+            self.i2c.transaction(
+                self.dev_addr,
+                &mut [
+                    Operation::Write(&_MEAS_MODE_REG),
+                    Operation::Write(&[configuration as u8]),
+                ],
+            );
         }
 
-        ret = self.i2c.write_read(self.dev_addr, &_MEAS_MODE_REG, &mut config_read);
-        if config_read[0] & configuration != 0
-        {
-            info!("Failed to configure");
+        self.i2c
+            .write_read(self.dev_addr, &_MEAS_MODE_REG, &mut config_read);
+        if config_read[0] & configuration == 0 {
+            error!("Failed to configure");
         }
     }
 
-    // Handler function for reading data. 
+    // Handler function for reading data.
     pub fn read_data(&mut self) {
-        let mut sensor_data: [u8;8] = [0u8;8];
+        let mut sensor_data: [u8; 8] = [0u8; 8];
 
-        let ret = self.i2c.write_read(self.dev_addr, &_ALG_RESULT_REG, &mut sensor_data);
+        self.i2c
+            .write_read(self.dev_addr, &_ALG_RESULT_REG, &mut sensor_data);
+
+        if sensor_data[4] & Status::Error != 0 {
+            print_error(sensor_data[4]);
+            // Return error?
+        }
+        if sensor_data[4] & Status::DataReady != 0 {
+            debug!("Data to ready yet?");
+            // Return early
+        }
 
         let eco2 = ((sensor_data[0]) as u16 & 0xFF) << 8 | (sensor_data[1]) as u16 & 0xFF;
         let tvoc = ((sensor_data[2]) as u16 & 0xFF) << 8 | (sensor_data[3]) as u16 & 0xFF;
+
+        info!("eCO2: {:#?} ppm\tTVOC: {:#?}", eco2, tvoc);
     }
 
     pub fn read_meas_mode(&mut self) {
         // Read measurement mode
-        let mut status: [u8; 1] = [0u8;1];
+        let mut status: [u8; 1] = [0u8; 1];
 
-        let mut ret = self.i2c.write_read(self.dev_addr, &_MEAS_MODE_REG, &mut status);
+        self.i2c
+            .write_read(self.dev_addr, &_MEAS_MODE_REG, &mut status);
         info!("Meas mode: {:08b}", status[0]);
 
         if status[0] & MeasurementDriveMode::Mode0Idle as u8 != 0 {
@@ -173,19 +214,19 @@ impl<'a> CO2Sensor<'a> {
         if status[0] & MeasurementDriveMode::IRQEnable as u8 != 0 {
             info!("\t-> Interrupt generation is enabled")
         } else {
-            info!("\t-> Interrupt generation is disabled")
+            warn!("\t-> Interrupt generation is disabled")
         }
     }
 }
 
 fn print_error(id: u8) {
     match id {
-        1 => info!("WRITE_REG_INVALID"),
-        2 => info!("READ_REG_INVALID"),
-        4 => info!("MEASMODE_INVALID"),
-        8 => info!("MAX_RESISTANCE"),
-        16 => info!("HEATER_FAULT"),
-        32 => info!("HEATER_SUPPLY"),
-        _ => info!("Error {:08b}", id),
+        1 => error!("WRITE_REG_INVALID"),
+        2 => error!("READ_REG_INVALID"),
+        4 => error!("MEASMODE_INVALID"),
+        8 => error!("MAX_RESISTANCE"),
+        16 => error!("HEATER_FAULT"),
+        32 => error!("HEATER_SUPPLY"),
+        _ => error!("Error {:08b}", id),
     }
 }
