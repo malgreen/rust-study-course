@@ -3,9 +3,9 @@ runner = "espflash flash --monitor --chip esp32 --log-format defmt"
 
 [env]
 DEFMT_LOG="info"
-MOTE_WIFI_SSID="foo"
-MOTE_WIFI_PASSWORD="bar"
-SERVER_IP="1.2.3.4"
+MOTE_WIFI_SSID="co2wifi"
+MOTE_WIFI_PASSWORD="co2password"
+SERVER_IP="10.42.0.214"
 SERVER_PORT="9876"
 
 [build]

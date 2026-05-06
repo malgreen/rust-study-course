@@ -11,24 +11,31 @@ use smoltcp::wire::IpAddress;
 use {esp_backtrace as _, esp_println as _};
 
 pub fn http_loop(tcp_socket: &mut Socket<WifiDevice>) {
-    tcp_socket.work();
+    // tcp_socket.work();
 
-    // === 0. open socket === //
     let (server_ip, server_port) = get_server_ip_address_and_port();
-    tcp_socket.open(server_ip, server_port).unwrap_or_else(|e| {
-        error!("TCP open socket error: {}", e);
-        panic!();
-    });
+    // let server_ip = IpAddress::v4(188, 114, 97, 0);
+    // let server_port = 80;
     loop {
+        info!("Opening TCP socket to {}:{}", server_ip, server_port);
+        // === 0. open socket === //
+        tcp_socket.open(server_ip, server_port).unwrap_or_else(|e| {
+            error!("TCP open socket error: {}", e);
+            panic!();
+        });
+
         // === 1. send http request === //
         info!("Sending GET request to {}:{}", server_ip, server_port);
         tcp_socket.work();
+
         if let Err(e) = // we can't use unwrap_or_else because we need control flow control
-            tcp_socket.write(format!("GET / HTTP/1.1\r\nHost:{server_ip}\r\n").as_bytes())
+            //tcp_socket.write(format!("GET / HTTP/1.0\r\nHost:{server_ip}\r\n").as_bytes())
+            tcp_socket.write(b"GET /posts HTTP/1.0\r\n")
         {
             error!("GET request error: {} - retrying", e);
             continue;
         }
+        // info!("{}", tcp_socket.read(buf));
 
         if let Err(e) = tcp_socket.flush() {
             error!("TCP flush socket error: {} - retrying", e);
@@ -40,6 +47,7 @@ pub fn http_loop(tcp_socket: &mut Socket<WifiDevice>) {
         let timeout = Instant::now() + Duration::from_secs(20);
         let mut tcp_socket_buffer = [0u8; 512];
         // if tcp_socket.is_open() TODO <--
+        info!("{}", tcp_socket.is_open());
         while let Ok(len) = tcp_socket.read(&mut tcp_socket_buffer) {
             info!("reading");
             let Ok(part) = core::str::from_utf8(&tcp_socket_buffer[..len]) else {
@@ -55,7 +63,9 @@ pub fn http_loop(tcp_socket: &mut Socket<WifiDevice>) {
         }
 
         // === 3. close socket === //
+        info!("Closing TCP socket...");
         tcp_socket.disconnect();
+        tcp_socket.close();
         let mut timeout = Instant::now() + Duration::from_secs(5);
         while Instant::now() < timeout {
             tcp_socket.work();

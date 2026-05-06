@@ -12,6 +12,7 @@ use crate::wifi::{assign_ip_address, build_networking_stack, connect_wifi, setup
 use defmt::error;
 use esp_hal::clock::CpuClock;
 use esp_hal::main;
+use esp_hal::time::{Duration, Instant};
 use esp_hal::timer::timg::TimerGroup;
 
 use {esp_backtrace as _, esp_println as _};
@@ -55,10 +56,17 @@ fn main() -> ! {
 
     let mut net_stack = build_networking_stack(wifi_device, tcp_interface, &mut tcp_sockets);
 
-    connect_wifi(&mut wifi_controller).unwrap_or_else(|e| {
-        error!("WiFi connection error: {}", e);
-        panic!();
-    });
+    loop {
+        match connect_wifi(&mut wifi_controller) {
+            Ok(_) => break,
+            Err(e) => {
+                error!("WiFi connection error: {} - retrying in 1 second...", e);
+                let timeout = Instant::now() + Duration::from_secs(1);
+                while Instant::now() < timeout {}
+                continue;
+            },
+        }
+    }
 
     assign_ip_address(&mut net_stack);
 

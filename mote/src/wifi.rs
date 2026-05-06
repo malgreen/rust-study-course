@@ -84,18 +84,23 @@ pub fn build_networking_stack<'a>(
 pub fn connect_wifi(wifi_controller: &mut WifiController) -> Result<(), WifiError> {
     wifi_controller.set_power_saving(esp_radio::wifi::PowerSaveMode::None)?;
 
+
+
     let client_config = ModeConfig::Client(
         ClientConfig::default()
             .with_ssid(WIFI_SSID.into())
-            .with_password(WIFI_PASSWORD.into()),
+            .with_password(WIFI_PASSWORD.into())
+            // .with_auth_method(esp_radio::wifi::AuthMethod::Wpa2Personal)
     );
+
+    
 
     wifi_controller.set_config(&client_config)?;
     wifi_controller.start()?;
 
-    info!("WiFi controller scanning...");
-    let scan_config = ScanConfig::default().with_max(10);
-    wifi_controller.scan_with_config(scan_config)?;
+    // info!("WiFi controller scanning...");
+    // let scan_config = ScanConfig::default().with_max(10);
+    // wifi_controller.scan_with_config(scan_config)?;
 
     info!("WiFi scan complete, connecting...");
     wifi_controller.connect()?;
@@ -112,5 +117,5 @@ pub fn assign_ip_address(stack: &mut Stack<WifiDevice>) {
         stack.work();
     }
 
-    info!("IP address assigned");
+    info!("IP address assigned: {}", stack.get_ip_info());
 }
