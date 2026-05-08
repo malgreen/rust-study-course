@@ -1,8 +1,8 @@
+use crate::Rate;
+use defmt::{Format, debug, error, info, warn};
 use esp_hal::Blocking;
 use esp_hal::i2c::master::{Config as i2cConfig, I2c, Operation};
-use defmt::{debug, error, info, warn, Format};
 use esp_hal::peripherals::{GPIO21, GPIO22, I2C0};
-use crate::Rate;
 // Bootloader
 const _APP_VERIFY: [u8; 1] = [0xF3];
 const _APP_START: [u8; 1] = [0xF4];
@@ -57,13 +57,13 @@ pub struct CO2Sensor<'a> {
 }
 
 impl<'a> CO2Sensor<'a> {
-    /// Construct a CO2 sensor 
+    /// Construct a CO2 sensor
     pub fn new(_i2c: I2C0<'a>, scl: GPIO22<'a>, sda: GPIO21<'a>) -> CO2Sensor<'a> {
         let mut i2c = I2c::new(_i2c, i2cConfig::default())
             .unwrap()
             .with_scl(scl) // Does it need .upwrap()?
             .with_sda(sda);
-    
+
         i2c.apply_config(&i2cConfig::default().with_frequency(Rate::from_khz(100)));
 
         Self {
@@ -74,9 +74,9 @@ impl<'a> CO2Sensor<'a> {
     }
 
     /// Find a i2c device on the bus. Check for response
-    /// 
+    ///
     /// Datasheet highlights 0x5A and 0x5B.
-    /// 
+    ///
     /// Returns current address -> The address which was confirmed or returns error
     pub fn find_dev(&mut self) -> Result<u8, Errors> // Return some correct type??
     {
@@ -100,19 +100,16 @@ impl<'a> CO2Sensor<'a> {
     }
 
     /// Reads status register. On error the error register is also read (get_error)
-    /// 
+    ///
     /// Will start the application if firmware is loaded but not running.
-    /// 
+    ///
     /// Program does not support transfering the firmware.
     pub fn read_status(&mut self) -> Result<(), Errors> {
         let mut status: [u8; 1] = [0u8; 1];
 
-        if let Err(_) = self
-            .i2c
+        self.i2c
             .write_read(self.dev_addr, &_STATUS_REG, &mut status)
-        {
-            return Err(Errors::ReadingFault);
-        }
+            .map_err(|_| Errors::ReadingFault)?;
 
         if status[0] & Status::FwMode as u8 != 0 {
             info!("\t-> Firmware is in application mode. CCS811 is ready to take ADC measurements");
@@ -136,12 +133,12 @@ impl<'a> CO2Sensor<'a> {
     }
 
     /// Starts the application if the chip is in bootloader mode.
-    /// 
+    ///
     /// Requires that a firmware is loaded already.
     pub fn app_start(&mut self) -> Result<(), Errors> {
-        if let Err(_) = self.i2c.write(self.dev_addr, &_APP_START) {
-            return Err(Errors::ReadingFault);
-        }
+        self.i2c
+            .write(self.dev_addr, &_APP_START)
+            .map_err(|_| Errors::ReadingFault)?;
         self.read_status()
     }
 
@@ -152,12 +149,9 @@ impl<'a> CO2Sensor<'a> {
         interrupt: bool,
     ) -> Result<(), Errors> {
         let mut config_read: [u8; 1] = [0u8; 1];
-        if let Err(_) = self
-            .i2c
+        self.i2c
             .write_read(self.dev_addr, &_MEAS_MODE_REG, &mut config_read)
-        {
-            return Err(Errors::ReadingFault);
-        }
+            .map_err(|_| Errors::ReadingFault)?;
 
         let mut configuration: u8 = mode as u8;
 
@@ -169,23 +163,21 @@ impl<'a> CO2Sensor<'a> {
         debug!("Config: {:08b}", configuration);
 
         if config_read[0] != configuration {
-            if let Err(_) = self.i2c.transaction(
-                self.dev_addr,
-                &mut [
-                    Operation::Write(&_MEAS_MODE_REG),
-                    Operation::Write(&[configuration as u8]),
-                ],
-            ) {
-                return Err(Errors::WriteRegInvalid);
-            }
+            self.i2c
+                .transaction(
+                    self.dev_addr,
+                    &mut [
+                        Operation::Write(&_MEAS_MODE_REG),
+                        Operation::Write(&[configuration as u8]),
+                    ],
+                )
+                .map_err(|_| Errors::WriteRegInvalid)?;
         }
 
-        if let Err(_) = self
-            .i2c
+        self.i2c
             .write_read(self.dev_addr, &_MEAS_MODE_REG, &mut config_read)
-        {
-            return Err(Errors::ReadingFault);
-        }
+            .map_err(|_| Errors::ReadingFault)?;
+
         if config_read[0] & configuration == 0 {
             error!("Failed to configure");
             return Err(Errors::ConfigError);
@@ -194,17 +186,14 @@ impl<'a> CO2Sensor<'a> {
     }
 
     /// Read sensor data from chip
-    /// 
+    ///
     /// Activated on interrupt or checking wether the data is ready.
     pub fn read_data(&mut self) -> Result<(u16, u16), Errors> {
         let mut sensor_data: [u8; 8] = [0u8; 8];
 
-        if let Err(_) = self
-            .i2c
+        self.i2c
             .write_read(self.dev_addr, &_ALG_RESULT_REG, &mut sensor_data)
-        {
-            return Err(Errors::ReadingFault);
-        }
+            .map_err(|_| Errors::ReadingFault)?;
 
         if sensor_data[4] & (Status::Error as u8) != 0 {
             if let Err(e) = self.get_error() {
@@ -221,8 +210,7 @@ impl<'a> CO2Sensor<'a> {
         let tvoc = ((sensor_data[2]) as u16 & 0xFF) << 8 | (sensor_data[3]) as u16 & 0xFF;
 
         // Some reads in the beginning says 0. Skip those
-        if eco2 != 0
-        {
+        if eco2 != 0 {
             return Ok((eco2, tvoc));
         }
         return Err(Errors::DataNotReady);
@@ -232,12 +220,10 @@ impl<'a> CO2Sensor<'a> {
         // Read measurement mode
         let mut status: [u8; 1] = [0u8; 1];
 
-        if let Err(_) = self
-            .i2c
+        self.i2c
             .write_read(self.dev_addr, &_MEAS_MODE_REG, &mut status)
-        {
-            return Err(Errors::ReadingFault);
-        }
+            .map_err(|_| Errors::ReadingFault)?;
+
         debug!("Meas mode: {:08b}", status[0]);
 
         if status[0] & MeasurementDriveMode::Mode0Idle as u8 != 0 {
@@ -258,14 +244,11 @@ impl<'a> CO2Sensor<'a> {
     }
 
     fn get_error(&mut self) -> Result<(), Errors> {
-        let mut error_id: [u8; 1] = [0u8;1];
+        let mut error_id: [u8; 1] = [0u8; 1];
 
-        if let Err(_) = self
-            .i2c
+        self.i2c
             .write_read(self.dev_addr, &_ERROR_ID_REG, &mut error_id)
-        {
-            return Err(Errors::ReadingFault);
-        }
+            .map_err(|_| Errors::ReadingFault)?;
 
         match error_id[0] {
             // Possible wrong since errors might occur at the same time.
