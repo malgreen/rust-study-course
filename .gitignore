@@ -20,5 +20,5 @@ target
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-# Ignore .DS_Store file in mac
+# Ignore .DS_Store file on macOS
 **/.DS_Store

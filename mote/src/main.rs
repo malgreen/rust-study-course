@@ -7,16 +7,19 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
+use crate::http::http_loop;
 use crate::sensor::CO2Sensor;
+use crate::wifi::{assign_ip_address, build_networking_stack, connect_wifi, setup_tcp, setup_wifi};
 
 use esp_hal::clock::CpuClock;
 use esp_hal::gpio::{Input, InputConfig, Pull};
 use esp_hal::i2c::master::Config as OtherConfig;
 use esp_hal::main;
-use esp_hal::time::Rate;
+use esp_hal::time::{Duration, Instant, Rate};
 use esp_hal::timer::timg::TimerGroup;
+
+use defmt::{error, info};
 use {esp_backtrace as _, esp_println as _};
-use defmt::{info, error};
 
 // Interrupt
 // use core::cell::{Cell, RefCell};
@@ -27,6 +30,8 @@ use defmt::{info, error};
 // static BUTTON: Mutex<RefCell<Option<GPIO36<Input<PullUp>>>>> = Mutex::new(RefCell::new(None));
 
 extern crate alloc;
+mod http;
+mod wifi;
 
 mod sensor;
 
@@ -40,8 +45,7 @@ esp_bootloader_esp_idf::esp_app_desc!();
 )]
 #[main]
 fn main() -> ! {
-    // generator version: 1.2.0
-
+    // === device setup === //
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     // let config_i2c = OtherConfig::default().with_frequency(Rate::from_khz(100));
     let peripherals = esp_hal::init(config);
@@ -50,18 +54,46 @@ fn main() -> ! {
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
-    let radio_init = esp_radio::init().expect("Failed to initialize Wi-Fi/BLE controller");
-    let (mut _wifi_controller, _interfaces) =
-        esp_radio::wifi::new(&radio_init, peripherals.WIFI, Default::default())
-            .expect("Failed to initialize Wi-Fi controller");
 
+    // === networking setup === //
+    let radio_controller: esp_radio::Controller<'static> = esp_radio::init().unwrap_or_else(|e| {
+        error!("ESP Radio initialization error: {}", e);
+        panic!();
+    });
+
+    let (mut wifi_controller, mut wifi_device) = setup_wifi(&radio_controller, peripherals.WIFI)
+        .unwrap_or_else(|e| {
+            error!("WiFi initialization error: {}", e);
+            panic!();
+        });
+
+    let (tcp_interface, mut tcp_sockets) = setup_tcp(&mut wifi_device);
+
+    let mut net_stack = build_networking_stack(wifi_device, tcp_interface, &mut tcp_sockets);
+
+    loop {
+        match connect_wifi(&mut wifi_controller) {
+            Ok(_) => break,
+            Err(e) => {
+                error!("WiFi connection error: {} - retrying in 1 second...", e);
+                let timeout = Instant::now() + Duration::from_secs(1);
+                while Instant::now() < timeout {}
+                continue;
+            }
+        }
+    }
+    assign_ip_address(&mut net_stack);
+
+    let mut tcp_write_buffer = [0u8; 2048];
+    let mut tcp_read_buffer = [0u8; 2048];
+    let mut tcp_socket = net_stack.get_socket(&mut tcp_read_buffer, &mut tcp_write_buffer);
+
+    // === sensor setup === //
     let mut co2_sensor: CO2Sensor =
         CO2Sensor::new(peripherals.I2C0, peripherals.GPIO22, peripherals.GPIO21);
     match co2_sensor.find_dev() {
         Ok(addr) => info!("Device found at 0x{:02x}", addr),
-        Err(e) => {
-            loop {}
-        }
+        Err(e) => loop {},
     }
 
     if let Err(e) = co2_sensor.read_status() {
@@ -81,8 +113,6 @@ fn main() -> ! {
     let input_config = InputConfig::default().with_pull(Pull::Up);
     let mut interrupt_pin = Input::new(peripherals.GPIO36, input_config);
 
-
-
     loop {
         if interrupt_pin.is_low() {
             match co2_sensor.read_data() {
@@ -92,4 +122,11 @@ fn main() -> ! {
         }
     }
 
+    
+
+    // === main loops === //
+    http_loop(&mut tcp_socket);
+
+    // TODO: why is this necessary?
+    loop {}
 }

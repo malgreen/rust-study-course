@@ -1,3 +1,0 @@
-[workspace]
-members = ["mote", "server"]
-resolver = "3"

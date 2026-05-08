@@ -3,6 +3,10 @@ runner = "espflash flash --monitor --chip esp32 --log-format defmt"
 
 [env]
 DEFMT_LOG="info"
+MOTE_WIFI_SSID="co2wifi" # co2wifi
+MOTE_WIFI_PASSWORD="co2password" # co2password
+SERVER_IP="10.42.0.1" # co2pi.local
+SERVER_PORT="9876"
 
 [build]
 rustflags = [

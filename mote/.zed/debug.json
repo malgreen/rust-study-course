@@ -1,0 +1,18 @@
+// Project-local debug tasks
+//
+// For more documentation on how to configure debug tasks,
+// see: https://zed.dev/docs/debugger
+[
+    {
+        "label": "Debug (MOTE)",
+        "build": {
+            "cwd": "$ZED_DIRNAME",
+            "command": "cargo",
+            "args": ["build"],
+        },
+        "program": "$ZED_DIRNAME/../target/debug/mote",
+        "sourceLanguages": ["rust"],
+        "request": "launch",
+        "adapter": "CodeLLDB",
+    },
+]
