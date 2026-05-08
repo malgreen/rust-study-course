@@ -11,6 +11,7 @@ use crate::http::http_loop;
 use crate::sensor::CO2Sensor;
 use crate::wifi::{assign_ip_address, build_networking_stack, connect_wifi, setup_tcp, setup_wifi};
 
+use alloc::format;
 use esp_hal::clock::CpuClock;
 use esp_hal::gpio::{Input, InputConfig, Pull};
 use esp_hal::i2c::master::Config as OtherConfig;
@@ -113,18 +114,29 @@ fn main() -> ! {
     let input_config = InputConfig::default().with_pull(Pull::Up);
     let mut interrupt_pin = Input::new(peripherals.GPIO36, input_config);
 
+    // === main loop === //
     loop {
-        if interrupt_pin.is_low() {
-            match co2_sensor.read_data() {
-                Ok((eco2, tvoc)) => info!("eCO2: {} ppm\tTVOC: {}ppb", eco2, tvoc),
-                Err(e) => error!("Failed to read data: {:?}", e),
+        while !interrupt_pin.is_low() {}
+
+        let (eco2, tvoc) = match co2_sensor.read_data() {
+            Ok((eco2, tvoc)) => (eco2, tvoc),
+            Err(e) => {
+                error!("Failed to read data: {:?}", e);
+                continue;
             }
-        }
+        };
+
+
+        let body = format!("{{\r\n\
+            \"e_co2\": {eco2},\r\n\
+            \"tvoc\": {tvoc}\r\n\
+        }}");
+
+        http::send_post(&mut tcp_socket, body.as_str());
     }
 
     
 
-    // === main loops === //
     http_loop(&mut tcp_socket);
 
     // TODO: why is this necessary?
