@@ -2,7 +2,7 @@ use blocking_network_stack::Stack;
 use defmt::info;
 use esp_hal::{peripherals::WIFI, rng::Rng};
 use esp_radio::wifi::{
-    ClientConfig, ModeConfig, ScanConfig, WifiController, WifiDevice, WifiError,
+    ClientConfig, ModeConfig, WifiController, WifiDevice, WifiError,
 };
 use smoltcp::iface::{SocketSet, SocketStorage};
 

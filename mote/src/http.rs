@@ -28,10 +28,15 @@ pub fn http_loop(tcp_socket: &mut Socket<WifiDevice>) {
         info!("Sending GET request to {}:{}", server_ip, server_port);
         tcp_socket.work();
 
-        if let Err(e) = // we can't use unwrap_or_else because we need control flow control
-            //tcp_socket.write(format!("GET / HTTP/1.0\r\nHost:{server_ip}\r\n").as_bytes())
-            tcp_socket.write(b"GET /posts HTTP/1.0\r\n")
-        {
+        let req = format!(
+            "\
+        GET / HTTP/1.1\r\n\
+        Host:{server_ip}:{server_port}\r\n\
+        \r\n"
+        );
+
+        info!("REQUEST: {}", req.as_str());
+        if let Err(e) = tcp_socket.write(req.as_bytes()) {
             error!("GET request error: {} - retrying", e);
             continue;
         }
@@ -46,10 +51,8 @@ pub fn http_loop(tcp_socket: &mut Socket<WifiDevice>) {
         info!("Request sent, waiting for response...");
         let timeout = Instant::now() + Duration::from_secs(20);
         let mut tcp_socket_buffer = [0u8; 512];
-        // if tcp_socket.is_open() TODO <--
-        info!("{}", tcp_socket.is_open());
+
         while let Ok(len) = tcp_socket.read(&mut tcp_socket_buffer) {
-            info!("reading");
             let Ok(part) = core::str::from_utf8(&tcp_socket_buffer[..len]) else {
                 error!("TCP read socket error - retrying");
                 continue;
@@ -61,6 +64,7 @@ pub fn http_loop(tcp_socket: &mut Socket<WifiDevice>) {
                 continue;
             }
         }
+        print!("\n");
 
         // === 3. close socket === //
         info!("Closing TCP socket...");
