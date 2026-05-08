@@ -1,5 +1,4 @@
 use axum::{Router, routing::get, routing::post};
-use local_ip_address::local_ip;
 
 mod api;
 mod web;
@@ -18,6 +17,6 @@ async fn main() {
         // api routes
         .route("/api/data", post(api::data::post));
 
-    println!("Serving on {}:{}", local_ip().unwrap(), LISTEN_PORT);
+    println!("Listening on port {}", LISTEN_PORT);
     axum::serve(listener, router).await.unwrap();
 }
