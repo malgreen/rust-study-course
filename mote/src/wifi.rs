@@ -9,11 +9,6 @@ use smoltcp::iface::{SocketSet, SocketStorage};
 const WIFI_SSID: &str = env!("MOTE_WIFI_SSID");
 const WIFI_PASSWORD: &str = env!("MOTE_WIFI_PASSWORD");
 
-// struct WifiBundle<'a> {
-//     wifi_controller: WifiController<'a>,
-//     stack: Stack<'a, WifiDevice<'a>>,
-// }
-
 /// Sets up WiFi peripherals and returns a WiFi (controller, device) tuple.
 pub fn setup_wifi<'a>(
     radio_controller: &'a esp_radio::Controller<'a>,
@@ -51,8 +46,8 @@ pub fn setup_tcp<'a>(
     result
 }
 
-/// Builds a blocking networking stack using a WiFi device and TCP interface/sockets.
-pub fn build_networking_stack<'a>(
+/// Sets up a blocking networking stack using a WiFi device and TCP interface/sockets.
+pub fn setup_networking_stack<'a>(
     wifi_device: WifiDevice<'a>,
     tcp_interface: smoltcp::iface::Interface,
     tcp_sockets: &'a mut [SocketStorage<'a>],
