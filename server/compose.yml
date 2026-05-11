@@ -1,0 +1,11 @@
+name: Co2Server
+services:
+  influxdb:
+      image: influxdb:latest
+      ports:
+        - '8086:8086'
+      volumes:
+        - influxdb-storage:/var/lib/influxdb
+      env_file: "influxdb.env"
+volumes:
+  influxdb-storage:

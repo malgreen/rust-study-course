@@ -7,6 +7,27 @@ It uses [`axum`](https://docs.rs/axum/latest/axum/) for the HTTP routing, and [`
 
 1. flash Raspberry Pi OS Lite (w. SSH access)
 1. ssh into rpi with `ssh pi@co2pi.local` and password `co2pass`
+1. install docker and docker-desktop with:
+
+    ```sh
+    sudo apt install docker.io docker-compose
+    ```
+
+1. copy InfluxDB files with:
+
+    ```sh
+    scp compose.yml pi@co2pi.local:/home/pi/compose.yml
+    scp influxdb.env pi@co2pi.local:/home/pi/influxdb.env
+    ```
+
+1. run InfluxDB with
+
+    ```sh
+    sudo docker compose up -d
+    ```
+
+1. go to `co2pi.local:8086` in a browser and setup InfluxDB. '`co2`' should be used as bucket name, otherwise change `.cargo/config.toml`.
+
 1. enable hotspot with:
 
     ```sh

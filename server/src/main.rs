@@ -1,4 +1,4 @@
-use axum::{Router, routing::get, routing::post};
+use axum::{routing::get, routing::post, Router};
 
 mod api;
 mod web;
