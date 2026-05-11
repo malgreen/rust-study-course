@@ -8,7 +8,7 @@
 #![deny(clippy::large_stack_frames)]
 
 use crate::sensor::CO2Sensor;
-use crate::wifi::{assign_ip_address, build_networking_stack, connect_wifi, setup_tcp, setup_wifi};
+use crate::wifi::{assign_ip_address, setup_networking_stack, connect_wifi, setup_tcp, setup_wifi};
 
 use alloc::format;
 use esp_hal::clock::CpuClock;
@@ -68,7 +68,7 @@ fn main() -> ! {
 
     let (tcp_interface, mut tcp_sockets) = setup_tcp(&mut wifi_device);
 
-    let mut net_stack = build_networking_stack(wifi_device, tcp_interface, &mut tcp_sockets);
+    let mut net_stack = setup_networking_stack(wifi_device, tcp_interface, &mut tcp_sockets);
 
     loop {
         match connect_wifi(&mut wifi_controller) {
@@ -92,9 +92,7 @@ fn main() -> ! {
         CO2Sensor::new(peripherals.I2C0, peripherals.GPIO22, peripherals.GPIO21);
     match co2_sensor.find_dev() {
         Ok(addr) => info!("Device found at 0x{:02X}", addr),
-        Err(e) => {
-            loop {}
-        }
+        Err(e) => loop {},
     }
 
     if let Err(e) = co2_sensor.read_status() {
@@ -130,20 +128,20 @@ fn main() -> ! {
             }
         };
 
-
-        let body = format!("{{\r\n\
+        let body = format!(
+            "{{\r\n\
             \"room\": \"{room}\",\r\n\
             \"eco2\": {eco2},\r\n\
             \"tvoc\": {tvoc}\r\n\
-        }}");
+        }}"
+        );
 
         match http::send_post(&mut tcp_socket, body.as_str()) {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(e) => {
                 error!("HTTP Post Request Failed: {:?}", e);
-                continue
-            },
+                continue;
+            }
         }
     }
-
 }
