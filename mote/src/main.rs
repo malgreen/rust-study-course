@@ -91,8 +91,10 @@ fn main() -> ! {
     let mut co2_sensor: CO2Sensor =
         CO2Sensor::new(peripherals.I2C0, peripherals.GPIO22, peripherals.GPIO21);
     match co2_sensor.find_dev() {
-        Ok(addr) => info!("Device found at 0x{:02x}", addr),
-        Err(e) => loop {},
+        Ok(addr) => info!("Device found at 0x{:02X}", addr),
+        Err(e) => {
+            loop {}
+        }
     }
 
     if let Err(e) = co2_sensor.read_status() {
@@ -100,7 +102,9 @@ fn main() -> ! {
         loop {}
     }
 
-    if let Err(e) = co2_sensor.meas_setup(sensor::MeasurementDriveMode::Mode11S, true) {
+    co2_sensor.enable_irq(true);
+
+    if let Err(e) = co2_sensor.meas_setup(sensor::MeasurementDriveMode::Mode11S) {
         error!("Failed to set meas mode: {:?}", e);
         loop {}
     }
