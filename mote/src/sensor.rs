@@ -10,7 +10,7 @@ const _APP_START: [u8; 1] = [0xF4];
 // Registers
 const _STATUS_REG: [u8; 1] = [0x00];
 const _DRIVE_MODE_REG: [u8; 1] = [0x01];
-const _ALG_RESULT_REG: [u8; 1] = [0x02];
+const _ALG_RESULT_DATA_REG: [u8; 1] = [0x02];
 const _RAW_DATA_REG: [u8; 1] = [0x03];
 const _NTC_REG: [u8; 1] = [0x06];
 const _HW_ID_REG: [u8; 1] = [0x20]; // Used to test if data from chip is valid. Should return 81
@@ -184,7 +184,7 @@ impl<'a> CO2Sensor<'a> {
         let mut sensor_data: [u8; 8] = [0u8; 8];
 
         self.i2c
-            .write_read(self.dev_addr, &_ALG_RESULT_REG, &mut sensor_data)
+            .write_read(self.dev_addr, &_ALG_RESULT_DATA_REG, &mut sensor_data)
             .map_err(|_| Errors::ReadingFault)?;
 
         if sensor_data[4] & (Status::Error as u8) != 0 {
@@ -192,7 +192,7 @@ impl<'a> CO2Sensor<'a> {
                 return Err(e);
             }
         }
-        if sensor_data[4] & (Status::DataReady as u8) == 0 {
+        if sensor_data[4] & (Status::DataReady as u8) == 0 { // With interrupt, this should never happen
             debug!("Data not ready yet?");
 
             return Err(Errors::DataNotReady);
