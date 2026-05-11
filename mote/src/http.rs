@@ -3,36 +3,21 @@ use alloc::vec::Vec;
 use blocking_network_stack::{IoError, Socket};
 use defmt::{error, info};
 use embedded_io::{Read, Write};
-use esp_hal::time::{Duration, Instant};
 use esp_println::print;
 use esp_radio::wifi::WifiDevice;
-use smoltcp::{socket::tcp::ListenError, wire::IpAddress};
-
-use {esp_backtrace as _, esp_println as _};
+use smoltcp::wire::IpAddress;
 
 pub fn send_post(tcp_socket: &mut Socket<WifiDevice>, body: &str) -> Result<(), IoError> {
-
     let (server_ip, server_port) = get_server_ip_address_and_port();
-    // let server_ip = IpAddress::v4(188, 114, 97, 0);
-    // let server_port = 80;
-    info!("Opening TCP socket to {}:{}", server_ip, server_port);
+
     // === 0. open socket === //
+    info!("Opening TCP socket to {}:{}", server_ip, server_port);
     tcp_socket.open(server_ip, server_port)?;
-    // tcp_socket.open(server_ip, server_port).unwrap_or_else(|e| {
-    //     error!("TCP open socket error: {}", e);
-    //     panic!();
-    // });
 
     // === 1. send http request === //
     info!("Sending GET request to {}:{}", server_ip, server_port);
     tcp_socket.work();
 
-    // let req = format!(
-    //     "\
-    // GET / HTTP/1.1\r\n\
-    // Host:{server_ip}:{server_port}\r\n\
-    // \r\n"
-    // );
     let req = format!(
         "\
     POST /api/data HTTP/1.1\r\n\
@@ -42,25 +27,15 @@ pub fn send_post(tcp_socket: &mut Socket<WifiDevice>, body: &str) -> Result<(), 
     Content-Length: {}\r\n\r\n\
     {}
     \r\n",
-    server_ip, server_port,
-    body.len(),
-    body
+        server_ip,
+        server_port,
+        body.len(),
+        body
     );
 
-    
-
-    info!("REQUEST: {}", req.as_str());
     tcp_socket.write(req.as_bytes())?;
-    // if let Err(e) = tcp_socket.write(req.as_bytes()) {
-    //     error!("GET request error: {} - retrying", e);
-        
-    // }
-    // info!("{}", tcp_socket.read(buf));
 
     tcp_socket.flush()?;
-    // if let Err(e) = tcp_socket.flush() {
-    //     error!("TCP flush socket error: {} - retrying", e);
-    // }
 
     // === 2. listen for http response === //
     info!("Request sent, waiting for response...");
@@ -79,85 +54,7 @@ pub fn send_post(tcp_socket: &mut Socket<WifiDevice>, body: &str) -> Result<(), 
     info!("Closing TCP socket...");
     tcp_socket.disconnect();
     tcp_socket.close();
-    // let mut timeout = Instant::now() + Duration::from_secs(5);
-    // while Instant::now() < timeout {
-    //     tcp_socket.work();
-    // }
-
-    // timeout = Instant::now() + Duration::from_secs(10);
-    // while Instant::now() < timeout {}
-
     Ok(())
-}
-
-pub fn http_loop(tcp_socket: &mut Socket<WifiDevice>) {
-    // tcp_socket.work();
-
-    let (server_ip, server_port) = get_server_ip_address_and_port();
-    // let server_ip = IpAddress::v4(188, 114, 97, 0);
-    // let server_port = 80;
-    loop {
-        info!("Opening TCP socket to {}:{}", server_ip, server_port);
-        // === 0. open socket === //
-        tcp_socket.open(server_ip, server_port).unwrap_or_else(|e| {
-            error!("TCP open socket error: {}", e);
-            panic!();
-        });
-
-        // === 1. send http request === //
-        info!("Sending GET request to {}:{}", server_ip, server_port);
-        tcp_socket.work();
-
-        let req = format!(
-            "\
-        GET / HTTP/1.1\r\n\
-        Host:{server_ip}:{server_port}\r\n\
-        \r\n"
-        );
-
-        info!("REQUEST: {}", req.as_str());
-        if let Err(e) = tcp_socket.write(req.as_bytes()) {
-            error!("GET request error: {} - retrying", e);
-            continue;
-        }
-        // info!("{}", tcp_socket.read(buf));
-
-        if let Err(e) = tcp_socket.flush() {
-            error!("TCP flush socket error: {} - retrying", e);
-            continue;
-        }
-
-        // === 2. listen for http response === //
-        info!("Request sent, waiting for response...");
-        let timeout = Instant::now() + Duration::from_secs(20);
-        let mut tcp_socket_buffer = [0u8; 512];
-
-        while let Ok(len) = tcp_socket.read(&mut tcp_socket_buffer) {
-            let Ok(part) = core::str::from_utf8(&tcp_socket_buffer[..len]) else {
-                error!("TCP read socket error - retrying");
-                continue;
-            };
-            print!("{part}");
-
-            if Instant::now() > timeout {
-                info!("GET timeout - retrying");
-                continue;
-            }
-        }
-        print!("\n");
-
-        // === 3. close socket === //
-        info!("Closing TCP socket...");
-        tcp_socket.disconnect();
-        tcp_socket.close();
-        let mut timeout = Instant::now() + Duration::from_secs(5);
-        while Instant::now() < timeout {
-            tcp_socket.work();
-        }
-
-        timeout = Instant::now() + Duration::from_secs(10);
-        while Instant::now() < timeout {}
-    }
 }
 
 fn get_server_ip_address_and_port() -> (IpAddress, u16) {

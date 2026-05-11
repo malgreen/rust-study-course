@@ -7,14 +7,12 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
-use crate::http::http_loop;
 use crate::sensor::CO2Sensor;
 use crate::wifi::{assign_ip_address, build_networking_stack, connect_wifi, setup_tcp, setup_wifi};
 
 use alloc::format;
 use esp_hal::clock::CpuClock;
 use esp_hal::gpio::{Input, InputConfig, Pull};
-use esp_hal::i2c::master::Config as OtherConfig;
 use esp_hal::main;
 use esp_hal::time::{Duration, Instant, Rate};
 use esp_hal::timer::timg::TimerGroup;
@@ -114,6 +112,8 @@ fn main() -> ! {
     let input_config = InputConfig::default().with_pull(Pull::Up);
     let mut interrupt_pin = Input::new(peripherals.GPIO36, input_config);
 
+    let room = env!("MOTE_ROOM");
+
     // === main loop === //
     loop {
         while !interrupt_pin.is_low() {}
@@ -128,17 +128,18 @@ fn main() -> ! {
 
 
         let body = format!("{{\r\n\
-            \"e_co2\": {eco2},\r\n\
+            \"room\": \"{room}\",\r\n\
+            \"eco2\": {eco2},\r\n\
             \"tvoc\": {tvoc}\r\n\
         }}");
 
-        http::send_post(&mut tcp_socket, body.as_str());
+        match http::send_post(&mut tcp_socket, body.as_str()) {
+            Ok(_) => {},
+            Err(e) => {
+                error!("HTTP Post Request Failed: {:?}", e);
+                continue
+            },
+        }
     }
 
-    
-
-    http_loop(&mut tcp_socket);
-
-    // TODO: why is this necessary?
-    loop {}
 }
