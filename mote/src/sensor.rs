@@ -181,22 +181,22 @@ impl<'a> CO2Sensor<'a> {
     ///
     /// Reads 8 bytes where 0-3 is the raw data. This is converted to a u16
     pub fn read_data(&mut self) -> Result<(u16, u16), Errors> {
-        let mut sensor_data: [u8; 8] = [0u8; 8];
+        let mut sensor_data: [u8; 4] = [0u8; 4];
 
         self.i2c
             .write_read(self.dev_addr, &_ALG_RESULT_DATA_REG, &mut sensor_data)
             .map_err(|_| Errors::ReadingFault)?;
 
-        if sensor_data[4] & (Status::Error as u8) != 0 {
-            if let Err(e) = self.get_error() {
-                return Err(e);
-            }
-        }
-        if sensor_data[4] & (Status::DataReady as u8) == 0 { // With interrupt, this should never happen
-            debug!("Data not ready yet?");
+        // if sensor_data[4] & (Status::Error as u8) != 0 {
+        //     if let Err(e) = self.get_error() {
+        //         return Err(e);
+        //     }
+        // }
+        // if sensor_data[4] & (Status::DataReady as u8) == 0 { // With interrupt, this should never happen
+        //     debug!("Data not ready yet?");
 
-            return Err(Errors::DataNotReady);
-        }
+        //     return Err(Errors::DataNotReady);
+        // }
 
         let eco2 = ((sensor_data[0]) as u16 & 0xFF) << 8 | (sensor_data[1]) as u16 & 0xFF;
         let tvoc = ((sensor_data[2]) as u16 & 0xFF) << 8 | (sensor_data[3]) as u16 & 0xFF;
