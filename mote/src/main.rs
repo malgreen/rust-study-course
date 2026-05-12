@@ -17,7 +17,7 @@ use esp_hal::main;
 use esp_hal::time::{Duration, Instant, Rate};
 use esp_hal::timer::timg::TimerGroup;
 
-use defmt::{error, info};
+use defmt::{error, info, println};
 use {esp_backtrace as _, esp_println as _};
 
 // Interrupt
@@ -121,7 +121,10 @@ fn main() -> ! {
         while !interrupt_pin.is_low() {}
 
         let (eco2, tvoc) = match co2_sensor.read_data() {
-            Ok((eco2, tvoc)) => (eco2, tvoc),
+            Ok((eco2, tvoc)) => {
+                println!("");
+                info!("Data ready => eCO2: {}, TVOC: {}",eco2,tvoc);
+                (eco2, tvoc)},
             Err(e) => {
                 error!("Failed to read data: {:?}", e);
                 continue;

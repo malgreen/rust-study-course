@@ -15,7 +15,7 @@ pub fn send_post(tcp_socket: &mut Socket<WifiDevice>, body: &str) -> Result<(), 
     tcp_socket.open(server_ip, server_port)?;
 
     // === 1. send http request === //
-    info!("Sending GET request to {}:{}", server_ip, server_port);
+    info!("Sending POST request to {}:{}", server_ip, server_port);
     tcp_socket.work();
 
     let req = format!(
@@ -40,7 +40,7 @@ pub fn send_post(tcp_socket: &mut Socket<WifiDevice>, body: &str) -> Result<(), 
     // === 2. listen for http response === //
     info!("Request sent, waiting for response...");
     let mut tcp_socket_buffer = [0u8; 512];
-
+    print!("\n");
     while let Ok(len) = tcp_socket.read(&mut tcp_socket_buffer) {
         let Ok(part) = core::str::from_utf8(&tcp_socket_buffer[..len]) else {
             error!("TCP read socket error");
@@ -48,7 +48,6 @@ pub fn send_post(tcp_socket: &mut Socket<WifiDevice>, body: &str) -> Result<(), 
         };
         print!("{part}");
     }
-    print!("\n");
 
     // === 3. close socket === //
     info!("Closing TCP socket...");
