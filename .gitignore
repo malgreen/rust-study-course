@@ -22,3 +22,5 @@ target
 
 # Ignore .DS_Store file on macOS
 **/.DS_Store
+
+/out
