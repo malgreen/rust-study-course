@@ -1,0 +1,11 @@
+@startuml Co2Sensor
+
+circle Co2Sensor #black
+
+archimate #LightBlue "ESP-32" as esp <<technology-collaboration>>
+archimate #Technology "Raspberry Pi" as rpi <<technology-device>>
+
+Co2Sensor <.> esp: I2C
+esp <.> rpi: HTTP (WiFi)
+
+@enduml
