@@ -1,11 +1,16 @@
 name: Co2Server
 services:
   influxdb:
-      image: influxdb:latest
-      ports:
-        - '8086:8086'
-      volumes:
-        - influxdb-storage:/var/lib/influxdb
-      env_file: "influxdb.env"
+    image: influxdb:latest
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb-storage:/var/lib/influxdb
+    environment:
+      INFLUXDB_USERNAME: co2
+      INFLUXDB_PASSWORD: co2password
+      INFLUXDB_ORG: co2
+      INFLUXDB_BUCKET: co2
+      INFLUXDB_ADMIN_TOKEN: co2token
 volumes:
   influxdb-storage:
