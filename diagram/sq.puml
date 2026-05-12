@@ -1,0 +1,33 @@
+@startuml SequenceDiagram
+
+boundary Co2Sensor  as co2 #black
+entity "ESP-32" as esp #LightBlue
+box RPi
+entity "WEB API" as rpi #Technology
+database "InfluxDB" as db #grey
+end box
+activate co2
+co2 <- co2: Data ready
+co2 -> esp: Interrupt
+
+activate esp
+esp -> co2: Request data
+co2 --> esp: Data
+
+deactivate co2
+
+esp -> rpi: HTTP Post request
+activate rpi
+rpi --> esp: 200 OK
+deactivate esp
+
+rpi -> db: HTTP Post request
+activate db
+db --> rpi: 200 OK
+deactivate rpi
+deactivate db
+
+hide footbox
+
+@enduml
+
